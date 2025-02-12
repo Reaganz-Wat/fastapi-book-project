@@ -11,13 +11,8 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     
-    - name: Deploy to server
-      uses: appleboy/ssh-action@master
+    - name: Deploy to production
+      uses: johnbeynon/render-deploy-action@v0.0.8
       with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USERNAME }}
-        key: ${{ secrets.SSH_KEY }}
-        script: |
-          cd /path/to/your/app
-          git pull
-          systemctl restart your-fastapi-service
+        service-id: ${{ secrets.SERVICE_ID }}
+        api-key: ${{ secrets.RENDER_API_KEY }}
