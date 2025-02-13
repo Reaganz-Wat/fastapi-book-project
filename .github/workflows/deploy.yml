@@ -1,92 +1,59 @@
-name: Deploy to EC2
+name: deploy
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:  # Allows manual trigger of the workflow
 
 jobs:
   deploy:
-    name: Deploy to EC2
     runs-on: ubuntu-latest
-    
-    env:
-      DEPLOY_PATH: /home/ubuntu/app  # Adjust this path as needed
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3  # Using latest stable version
-        
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
-          
-      - name: Cache pip packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          python-version: 3.13
 
-      - name: Deploy code to EC2
-        uses: easingthemes/ssh-deploy@main
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
-          REMOTE_HOST: ${{ secrets.HOST_DNS }}
-          REMOTE_USER: ${{ secrets.USERNAME }}
-          TARGET: ${{ secrets.TARGET_DIR }}
-          EXCLUDE: ".git*, .env, .pytest_cache, __pycache__, venv"
-          SCRIPT_AFTER: |
-            echo "Deployment completed"
-
-      - name: Configure and restart application
-        uses: appleboy/ssh-action@master
+      # Deploy to server
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.HOST_DNS }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
+          host: ${{secrets.HOST_DNS}}
+          key: ${{secrets.EC2_SSH_KEY}}
+          username: ${{secrets.USERNAME}}
           script: |
-            # Update system packages
-            sudo apt-get update -y
-            sudo apt-get install -y python3-pip python3-venv git
+            echo "Starting deployment..."
 
             # Navigate to project directory
-            cd ${{ secrets.TARGET_DIR }}
+            cd fastapi-book-project
 
-            # Set up Python virtual environment
-            python3 -m venv venv
-            source venv/bin/activate
+            # Pull latest changes
+            echo "Pulling latest changes..."
+            git fetch --all
+            git pull origin main
+
+            # Setup virtual environment
+            echo "Setting up virtual environment..."
+            python3 -m venv venv || exit 1
+            source venv/bin/activate || exit 1
+
+            # Upgrade pip
+            python -m pip install --upgrade pip || exit 1
+
+            #Install fastapi
+            pip install fastapi || exit 1
+            echo "FastAPI installed successfully"
 
             # Install dependencies
-            pip install --upgrade pip
-            pip install -r requirements.txt
+            echo "Installing dependencies..."
+            pip install -r requirements.txt || exit 1
 
-            # Kill existing uvicorn process if running
-            pkill -f "uvicorn main:app" || true
+            # Stop existing application if running
+            echo "Stopping existing application..."
+            killall uvicorn || echo "No existing process found"
+            echo "Application stopped successfully"
 
-            # Start the application using systemd or supervisor (recommended)
-            # For now, using nohup as a basic solution
+            # Start application
+            echo "Starting application..."
             nohup uvicorn main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
-
-            # Wait a moment and check if the application is running
-            sleep 5
-            if pgrep -f "uvicorn main:app" > /dev/null
-            then
-                echo "Application successfully started"
-            else
-                echo "Failed to start application"
-                exit 1
-            fi
-
-      # - name: Verify deployment
-      #   uses: appleboy/ssh-action@master
-      #   with:
-      #     host: ${{ secrets.HOST_DNS }}
-      #     username: ${{ secrets.USERNAME }}
-      #     key: ${{ secrets.EC2_SSH_KEY }}
-      #     script: |
-      #       # Check if service is running
-      #       curl -f http://localhost:8000/health || exit 1
+            echo "Application started successfully"
